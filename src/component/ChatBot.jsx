@@ -246,11 +246,32 @@ const ChatBot = () => {
         }
       }
 
+      const currentDate = new Date().toLocaleDateString('en-IN');
+      
       const prompt = isPriceQuery 
-        ? `${locationContext}Provide current market prices in ${languages[selectedLanguage]} for: "${userMessage}". 
-           Include exact numbers, sources, and price trends.`
-        : `Act as agricultural expert in ${languages[selectedLanguage]}. 
-           Respond to: "${userMessage}". Include practical, location-aware solutions.`;
+        ? `${locationContext}As agricultural expert,agricultural market analyst, provide exact pricing in ${languages[selectedLanguage]} for: "${userMessage}". 
+           Structure response as:
+           
+           • Current Prices (₹/kg) [Updated: ${currentDate}]
+           • Nearest Markets (within 50km)
+           • Weekly Price Trend (↑↓ %)
+           • MSP Comparison (Govt vs Market)
+           • Key Influencing Factors
+           • Data Sources (AGMARKNET/State Board)
+           Use tables/markdown for data. Include local units like quintal/bigha.` 
+        : `As senior agronomist in ${languages[selectedLanguage]}, answer: "${userMessage}". 
+           Include:
+           1. Implementation Steps
+           2. Required Materials (Local Brands)
+           3. Cost Breakdown (₹ Range)
+           4. Optimal Timing (Season/Month)
+           5. Success Rate (%) 
+           6. Govt Schemes (Subsidies)
+           7. Safety Protocols
+           8. Weather Adaptations
+           9. Regional Case Studies
+        Format: Concise bullets •, max 5 points, use symbols (₹↑↓%)`;
+    
 
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -258,10 +279,17 @@ const ChatBot = () => {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }]
+            contents: [{
+              parts: [{ 
+                text: prompt + 
+                  (location ? `\nUser Location: ${location.lat},${location.lng}` : "") + 
+                  "\nFormat numbers with ₹ symbol and include dates"
+              }]
+            }]
           })
         }
       );
+
 
       if (!response.ok) throw new Error('API request failed');
       
