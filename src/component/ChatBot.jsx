@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { FaMicrophone, FaMicrophoneSlash } from 'react-icons/fa';
+import { FaMicrophone, FaMicrophoneSlash, FaVolumeUp, FaVolumeMute, FaStop } from 'react-icons/fa';
 
 const ChatBot = () => {
   const [messages, setMessages] = useState([]);
@@ -9,8 +9,12 @@ const ChatBot = () => {
   const [location, setLocation] = useState(null);
   const [locationStatus, setLocationStatus] = useState('unrequested');
   const [isRecording, setIsRecording] = useState(false);
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const [voices, setVoices] = useState([]);
+  const [selectedVoice, setSelectedVoice] = useState(null);
   const messagesEndRef = useRef(null);
   const recognition = useRef(null);
+  const synthesis = useRef(null);
 
   const languages = {
     hi: 'Hindi',
@@ -20,9 +24,17 @@ const ChatBot = () => {
     ur: 'Urdu'
   };
 
+  const voiceConfig = {
+    en: { lang: 'en-US', rate: 1.0 },
+    hi: { lang: 'hi-IN', rate: 0.9 },
+    te: { lang: 'te-IN', rate: 0.85 },
+    ta: { lang: 'ta-IN', rate: 0.85 },
+    ur: { lang: 'ur-PK', rate: 0.8 }
+  };
+
+  // Speech Recognition Setup
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-    
     if (SpeechRecognition) {
       recognition.current = new SpeechRecognition();
       recognition.current.continuous = false;
@@ -40,28 +52,38 @@ const ChatBot = () => {
         setIsRecording(false);
       };
 
-      recognition.current.onend = () => {
-        setIsRecording(false);
-      };
+      recognition.current.onend = () => setIsRecording(false);
     }
   }, []);
 
+  // Speech Synthesis Setup
+  useEffect(() => {
+    synthesis.current = window.speechSynthesis;
+    
+    const handleVoicesChanged = () => {
+      const availableVoices = synthesis.current.getVoices();
+      setVoices(availableVoices);
+      const config = voiceConfig[selectedLanguage];
+      const voice = availableVoices.find(v => v.lang === config.lang) ||
+                    availableVoices.find(v => v.lang.startsWith(selectedLanguage)) ||
+                    availableVoices.find(v => v.lang.startsWith('en'));
+      setSelectedVoice(voice);
+    };
+
+    synthesis.current.addEventListener('voiceschanged', handleVoicesChanged);
+    return () => synthesis.current?.removeEventListener('voiceschanged', handleVoicesChanged);
+  }, [selectedLanguage]);
+
+  // Language Handling
   useEffect(() => {
     if (recognition.current) {
-      const languageMap = {
-        en: 'en-US',
-        hi: 'hi-IN',
-        te: 'te-IN',
-        ta: 'ta-IN',
-        ur: 'ur-PK'
-      };
-      recognition.current.lang = languageMap[selectedLanguage] || 'en-US';
+      recognition.current.lang = voiceConfig[selectedLanguage].lang;
     }
   }, [selectedLanguage]);
 
+  // Speech Functions
   const toggleRecording = () => {
     if (!recognition.current) return;
-    
     if (isRecording) {
       recognition.current.stop();
     } else {
@@ -69,33 +91,113 @@ const ChatBot = () => {
         recognition.current.start();
         setIsRecording(true);
       } catch (error) {
-        console.error('Microphone access error:', error);
+        console.error('Microphone error:', error);
         setIsRecording(false);
       }
     }
   };
 
+  const speak = (text) => {
+    if (!synthesis.current) return;
+    if (isSpeaking) {
+      synthesis.current.cancel();
+      setIsSpeaking(false);
+      return;
+    }
+
+    const cleanText = text.replace(/[*]/g, '');
+    const config = voiceConfig[selectedLanguage];
+    
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.voice = selectedVoice;
+    utterance.lang = config.lang;
+    utterance.rate = config.rate;
+
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => setIsSpeaking(false);
+    utterance.onerror = () => setIsSpeaking(false);
+
+    synthesis.current.speak(utterance);
+  };
+
+  // Location Handling
+  const getLocation = () => {
+    setLocationStatus('requesting');
+    if (!navigator.geolocation) {
+      setLocationStatus('unsupported');
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLocation({ lat: position.coords.latitude, lng: position.coords.longitude });
+        setLocationStatus('granted');
+      },
+      (error) => {
+        setLocationStatus('denied');
+        console.error('Location error:', error);
+      },
+      { timeout: 10000 }
+    );
+  };
+
+  // Stop Chat Functionality
+  const stopChat = () => {
+    setMessages([]);
+    setLocation(null);
+    setLocationStatus('unrequested');
+    if (synthesis.current) {
+      synthesis.current.cancel();
+      setIsSpeaking(false);
+    }
+  };
+
+  // UI Styling
   const styles = `
     .chat-container {
       max-width: 800px;
       margin: 2rem auto;
       border-radius: 1rem;
       box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-      overflow: hidden;
       background: white;
+      font-family: 'Segoe UI', system-ui;
     }
 
     .chat-header {
       background: linear-gradient(135deg, #2e7d32, #388e3c);
-      padding: 1.5rem;
+      padding: 1rem;
       display: flex;
       justify-content: space-between;
       align-items: center;
+      color: white;
+    }
+
+    .header-controls {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .stop-button {
+      background: #dc3545;
+      color: white;
+      border: none;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      transition: all 0.3s ease;
+    }
+
+    .stop-button:hover {
+      background: #bb2d3b;
     }
 
     .chat-body {
       height: 60vh;
-      padding: 1.5rem;
+      padding: 1rem;
       overflow-y: auto;
       background: #f8fafc;
     }
@@ -123,6 +225,7 @@ const ChatBot = () => {
       max-width: 85%;
       padding: 1rem;
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      position: relative;
     }
 
     .price-response {
@@ -133,35 +236,12 @@ const ChatBot = () => {
       margin: 0.5rem 0;
     }
 
-    .location-status {
+    .audio-controls {
+      position: absolute;
+      right: 10px;
+      bottom: 10px;
       display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 1rem;
-      background: #f8fafc;
-      border-radius: 0.5rem;
-      margin-bottom: 1rem;
-    }
-
-    .language-select {
-      background: rgba(255,255,255,0.15);
-      border: 1px solid rgba(255,255,255,0.3);
-      color: white;
-      padding: 0.25rem 1rem;
-      border-radius: 0.5rem;
-    }
-
-    .input-container {
-      padding: 1.5rem;
-      background: white;
-      border-top: 1px solid #e2e8f0;
-    }
-
-    .audio-input {
-      display: flex;
-      gap: 0.5rem;
-      align-items: center;
-      width: 100%;
+      gap: 8px;
     }
 
     .mic-button {
@@ -172,27 +252,39 @@ const ChatBot = () => {
       border-radius: 50%;
       cursor: pointer;
       transition: all 0.3s ease;
+      width: 40px;
+      height: 40px;
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 40px;
-      height: 40px;
     }
 
-    .mic-button:disabled {
-      background: #6c757d;
-      cursor: not-allowed;
-      opacity: 0.65;
+    .speak-button {
+      background: none;
+      border: none;
+      color: #2e7d32;
+      cursor: pointer;
+      padding: 5px;
+      transition: all 0.3s ease;
     }
 
-    .typing-indicator {
+    .language-select {
+      background: rgba(255,255,255,0.15);
+      border: 1px solid rgba(255,255,255,0.3);
+      color: white;
+      padding: 0.5rem 1rem;
+      border-radius: 0.5rem;
+      cursor: pointer;
+    }
+
+    .loading-dots {
       display: flex;
       gap: 0.5rem;
       padding: 1rem;
       justify-content: center;
     }
 
-    .typing-dot {
+    .loading-dot {
       width: 10px;
       height: 10px;
       background: #2e7d32;
@@ -204,6 +296,52 @@ const ChatBot = () => {
       0%, 40%, 100% { transform: translateY(0); }
       20% { transform: translateY(-6px); }
     }
+
+    .location-status {
+      padding: 0.5rem 1rem;
+      background: #f8f9fa;
+      border-radius: 0.5rem;
+      margin-bottom: 1rem;
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .input-container {
+      padding: 1rem;
+      border-top: 1px solid #eee;
+    }
+
+    .audio-input {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+    }
+
+    .form-control {
+      flex: 1;
+      padding: 0.75rem;
+      border: 1px solid #ddd;
+      border-radius: 0.5rem;
+      outline: none;
+    }
+
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 0.5rem;
+      cursor: pointer;
+      transition: all 0.3s ease;
+    }
+
+    .btn-success {
+      background: #2e7d32;
+      color: white;
+    }
+
+    .btn-success:hover {
+      background: #1b5e20;
+    }
   `;
 
   useEffect(() => {
@@ -213,6 +351,41 @@ const ChatBot = () => {
     return () => document.head.removeChild(styleElement);
   }, [styles]);
 
+  const formatResponse = (text, isPrice) => {
+    const cleanText = text.replace(/[*]/g, '');
+    const content = isPrice ? (
+      <div className="price-response">
+        {cleanText.split('\n').map((line, index) => (
+          <div key={index} className="response-item">
+            🌱 {line.replace(/^\d+\.\s*/, '')}
+          </div>
+        ))}
+      </div>
+    ) : (
+      cleanText.split('\n').map((line, index) => (
+        <div key={index} className="response-item">
+          {line}
+        </div>
+      ))
+    );
+
+    return (
+      <>
+        {content}
+        <div className="audio-controls">
+          <button 
+            className="speak-button"
+            onClick={() => speak(cleanText)}
+            disabled={!synthesis.current}
+            title={synthesis.current ? "Read aloud" : "Text-to-speech unavailable"}
+          >
+            {isSpeaking ? <FaVolumeMute /> : <FaVolumeUp />}
+          </button>
+        </div>
+      </>
+    );
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -220,49 +393,6 @@ const ChatBot = () => {
   useEffect(() => scrollToBottom(), [messages]);
 
   const GEMINI_API_KEY = 'AIzaSyCnZRF-PjtViM_lN6xcM1QUZZatgaK6Jd0';
-
-  const getLocation = () => {
-    setLocationStatus('requesting');
-    
-    if (!navigator.geolocation) {
-      setLocationStatus('unsupported');
-      return;
-    }
-
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLocation({
-          lat: position.coords.latitude,
-          lng: position.coords.longitude
-        });
-        setLocationStatus('granted');
-      },
-      (error) => {
-        setLocationStatus('denied');
-        console.error('Geolocation error:', error);
-      },
-      { timeout: 10000 }
-    );
-  };
-
-  const formatResponse = (text, isPrice) => {
-    if (isPrice) {
-      return (
-        <div className="price-response">
-          {text.split('\n').map((line, index) => (
-            <div key={index} className="response-item">
-              🌱 {line.replace(/^\d+\.\s*/, '')}
-            </div>
-          ))}
-        </div>
-      );
-    }
-    return text.split('\n').map((line, index) => (
-      <div key={index} className="response-item">
-        {line}
-      </div>
-    ));
-  };
 
   const handleSend = async () => {
     if (!inputMessage.trim()) return;
@@ -283,7 +413,7 @@ const ChatBot = () => {
             responseText = 'Location access denied. Showing general prices 🔒';
             break;
           case 'unsupported':
-            responseText = 'Browser doesn\'t support location 🌐'; // Fixed apostrophe
+            responseText = 'Browser doesn';
             break;
           default:
             responseText = 'Location not requested yet 📊';
@@ -344,8 +474,7 @@ const ChatBot = () => {
           body: JSON.stringify({
             contents: [{
               parts: [{ 
-                text: prompt + 
-                  (location ? `\nCoordinates: ${location.lat},${location.lng}` : "")
+                text: prompt + (location ? `\nCoordinates: ${location.lat},${location.lng}` : "")
               }]
             }]
           })
@@ -379,35 +508,35 @@ const ChatBot = () => {
   return (
     <div className="chat-container">
       <div className="chat-header">
-        <div className="d-flex align-items-center gap-3">
-          <h2 className="m-0 text-white">🌾 Kisan Saathi</h2>
+        <h2>🌾 Kisan Saathi</h2>
+        <div className="header-controls">
+          <select
+            className="language-select"
+            value={selectedLanguage}
+            onChange={(e) => setSelectedLanguage(e.target.value)}
+          >
+            {Object.entries(languages).map(([code, name]) => (
+              <option key={code} value={code}>{name}</option>
+            ))}
+          </select>
+          <button className="stop-button" onClick={stopChat}>
+            <FaStop /> Stop Chat
+          </button>
         </div>
-        <select 
-          className="language-select"
-          value={selectedLanguage}
-          onChange={(e) => setSelectedLanguage(e.target.value)}
-        >
-          {Object.entries(languages).map(([code, name]) => (
-            <option key={code} value={code}>{name}</option>
-          ))}
-        </select>
       </div>
 
       <div className="chat-body">
         <div className="message-container">
           {messages.map((message, index) => (
-            <div 
-              key={index} 
-              className={message.isBot ? 'bot-message' : 'user-message'}
-            >
+            <div key={index} className={message.isBot ? 'bot-message' : 'user-message'}>
               {formatResponse(message.text, message.isPrice)}
             </div>
           ))}
           {loading && (
-            <div className="typing-indicator">
-              <div className="typing-dot"></div>
-              <div className="typing-dot" style={{ animationDelay: '0.2s' }}></div>
-              <div className="typing-dot" style={{ animationDelay: '0.4s' }}></div>
+            <div className="loading-dots">
+              <div className="loading-dot"></div>
+              <div className="loading-dot" style={{ animationDelay: '0.2s' }}></div>
+              <div className="loading-dot" style={{ animationDelay: '0.4s' }}></div>
             </div>
           )}
           <div ref={messagesEndRef} />
@@ -438,20 +567,16 @@ const ChatBot = () => {
 
         <div className="audio-input">
           <button
-            type="button"
             className="mic-button"
             onClick={toggleRecording}
             disabled={!recognition.current}
-            title={recognition.current ? 
-              (isRecording ? "Stop recording" : "Start recording") : 
-              "Speech recognition not supported"}
           >
             {isRecording ? <FaMicrophoneSlash /> : <FaMicrophone />}
           </button>
           <input
             type="text"
             className="form-control"
-            placeholder="Speak or type your question..."
+            placeholder="Speak or type..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
