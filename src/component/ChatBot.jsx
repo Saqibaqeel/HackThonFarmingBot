@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
+import { FaMicrophone, FaMicrophoneSlash } from 'react-icons/fa';
 
 const ChatBot = () => {
   const [messages, setMessages] = useState([]);
@@ -7,7 +8,9 @@ const ChatBot = () => {
   const [loading, setLoading] = useState(false);
   const [location, setLocation] = useState(null);
   const [locationStatus, setLocationStatus] = useState('unrequested');
+  const [isRecording, setIsRecording] = useState(false);
   const messagesEndRef = useRef(null);
+  const recognition = useRef(null);
 
   const languages = {
     hi: 'Hindi',
@@ -15,6 +18,61 @@ const ChatBot = () => {
     ta: 'Tamil',
     en: 'English',
     ur: 'Urdu'
+  };
+
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    
+    if (SpeechRecognition) {
+      recognition.current = new SpeechRecognition();
+      recognition.current.continuous = false;
+      recognition.current.interimResults = false;
+      recognition.current.maxAlternatives = 1;
+
+      recognition.current.onresult = (event) => {
+        const transcript = event.results[0][0].transcript;
+        setInputMessage(prev => prev + ' ' + transcript);
+        setIsRecording(false);
+      };
+
+      recognition.current.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+      };
+
+      recognition.current.onend = () => {
+        setIsRecording(false);
+      };
+    }
+  }, []);
+
+  useEffect(() => {
+    if (recognition.current) {
+      const languageMap = {
+        en: 'en-US',
+        hi: 'hi-IN',
+        te: 'te-IN',
+        ta: 'ta-IN',
+        ur: 'ur-PK'
+      };
+      recognition.current.lang = languageMap[selectedLanguage] || 'en-US';
+    }
+  }, [selectedLanguage]);
+
+  const toggleRecording = () => {
+    if (!recognition.current) return;
+    
+    if (isRecording) {
+      recognition.current.stop();
+    } else {
+      try {
+        recognition.current.start();
+        setIsRecording(true);
+      } catch (error) {
+        console.error('Microphone access error:', error);
+        setIsRecording(false);
+      }
+    }
   };
 
   const styles = `
@@ -65,7 +123,6 @@ const ChatBot = () => {
       max-width: 85%;
       padding: 1rem;
       box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-      position: relative;
     }
 
     .price-response {
@@ -76,15 +133,14 @@ const ChatBot = () => {
       margin: 0.5rem 0;
     }
 
-    .location-warning {
-      background: #fff3cd;
-      border-left: 4px solid #ffc107;
-      padding: 1rem;
-      margin: 1rem 0;
-      border-radius: 0.5rem;
+    .location-status {
       display: flex;
       align-items: center;
       gap: 0.5rem;
+      padding: 0.5rem 1rem;
+      background: #f8fafc;
+      border-radius: 0.5rem;
+      margin-bottom: 1rem;
     }
 
     .language-select {
@@ -93,6 +149,40 @@ const ChatBot = () => {
       color: white;
       padding: 0.25rem 1rem;
       border-radius: 0.5rem;
+    }
+
+    .input-container {
+      padding: 1.5rem;
+      background: white;
+      border-top: 1px solid #e2e8f0;
+    }
+
+    .audio-input {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      width: 100%;
+    }
+
+    .mic-button {
+      background: ${isRecording ? '#dc3545' : '#2e7d32'};
+      color: white;
+      border: none;
+      padding: 0.75rem;
+      border-radius: 50%;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 40px;
+    }
+
+    .mic-button:disabled {
+      background: #6c757d;
+      cursor: not-allowed;
+      opacity: 0.65;
     }
 
     .typing-indicator {
@@ -114,22 +204,6 @@ const ChatBot = () => {
       0%, 40%, 100% { transform: translateY(0); }
       20% { transform: translateY(-6px); }
     }
-
-    .input-container {
-      padding: 1.5rem;
-      background: white;
-      border-top: 1px solid #e2e8f0;
-    }
-
-    .location-status {
-      display: flex;
-      align-items: center;
-      gap: 0.5rem;
-      padding: 0.5rem 1rem;
-      background: #f8fafc;
-      border-radius: 0.5rem;
-      margin-bottom: 1rem;
-    }
   `;
 
   useEffect(() => {
@@ -137,7 +211,7 @@ const ChatBot = () => {
     styleElement.innerHTML = styles;
     document.head.appendChild(styleElement);
     return () => document.head.removeChild(styleElement);
-  }, []);
+  }, [styles]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -199,21 +273,20 @@ const ChatBot = () => {
     setLoading(true);
 
     try {
-      // Handle location queries
       if (/(location|where am i|मेरा स्थान|నా స్థానం|என் இடம்)/i.test(userMessage)) {
         let responseText = '';
         switch(locationStatus) {
           case 'granted':
-            responseText = 'I am using your location to provide accurate local prices 🌍';
+            responseText = 'Using your location for accurate prices 🌍';
             break;
           case 'denied':
-            responseText = 'Location access denied. Showing general market prices 🔒';
+            responseText = 'Location access denied. Showing general prices 🔒';
             break;
           case 'unsupported':
-            responseText = 'Browser does not support location services 🌐';
+            responseText = 'Browser doesn\'t support location 🌐'; // Fixed apostrophe
             break;
           default:
-            responseText = 'Location not requested yet. Prices are national averages 📊';
+            responseText = 'Location not requested yet 📊';
         }
         
         setMessages(prev => [...prev, { 
@@ -232,46 +305,36 @@ const ChatBot = () => {
         if (!location && locationStatus !== 'denied') {
           getLocation();
           setMessages(prev => [...prev, { 
-            text: '📍 Enable location access for accurate local prices', 
+            text: '📍 Enable location for local prices', 
             isBot: true 
           }]);
           return;
         }
 
         if (location) {
-          locationContext = `User Coordinates: ${location.lat},${location.lng}. `;
+          locationContext = `User Location: ${location.lat},${location.lng}. `;
           usedLocation = true;
         } else {
-          locationContext = 'No location available. Provide national average prices. ';
+          locationContext = 'National average prices. ';
         }
       }
 
       const currentDate = new Date().toLocaleDateString('en-IN');
-      
       const prompt = isPriceQuery 
-        ? `${locationContext}As agricultural expert,agricultural market analyst, provide exact pricing in ${languages[selectedLanguage]} for: "${userMessage}". 
-           Structure response as:
-           
-           • Current Prices (₹/kg) [Updated: ${currentDate}]
-           • Nearest Markets (within 50km)
-           • Weekly Price Trend (↑↓ %)
-           • MSP Comparison (Govt vs Market)
-           • Key Influencing Factors
-           • Data Sources (AGMARKNET/State Board)
-           Use tables/markdown for data. Include local units like quintal/bigha.` 
-        : `As senior agronomist in ${languages[selectedLanguage]}, answer: "${userMessage}". 
+        ? `${locationContext}Provide ${languages[selectedLanguage]} prices for: "${userMessage}".
+           Date: ${currentDate}
+           - Current ₹/kg
+           - Nearest markets
+           - Price trend
+           - MSP comparison
+           - Influencing factors` 
+        : `As agricultural expert (${languages[selectedLanguage]}), answer: "${userMessage}".
            Include:
-           1. Implementation Steps
-           2. Required Materials (Local Brands)
-           3. Cost Breakdown (₹ Range)
-           4. Optimal Timing (Season/Month)
-           5. Success Rate (%) 
-           6. Govt Schemes (Subsidies)
-           7. Safety Protocols
-           8. Weather Adaptations
-           9. Regional Case Studies
-        Format: Concise bullets •, max 5 points, use symbols (₹↑↓%)`;
-    
+           - Practical steps
+           - Local materials
+           - Cost range
+           - Best timing
+           - Safety tips`;
 
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -282,14 +345,12 @@ const ChatBot = () => {
             contents: [{
               parts: [{ 
                 text: prompt + 
-                  (location ? `\nUser Location: ${location.lat},${location.lng}` : "") + 
-                  "\nFormat numbers with ₹ symbol and include dates"
+                  (location ? `\nCoordinates: ${location.lat},${location.lng}` : "")
               }]
             }]
           })
         }
       );
-
 
       if (!response.ok) throw new Error('API request failed');
       
@@ -362,7 +423,7 @@ const ChatBot = () => {
                 className="btn btn-link btn-sm"
                 onClick={() => setLocation(null)}
               >
-                (Clear Location)
+                (Clear)
               </button>
             </>
           ) : (
@@ -370,16 +431,27 @@ const ChatBot = () => {
               className="btn btn-success btn-sm"
               onClick={getLocation}
             >
-              {locationStatus === 'denied' ? 'Retry Location Access' : 'Enable Local Prices'}
+              {locationStatus === 'denied' ? 'Retry Location' : 'Enable Location'}
             </button>
           )}
         </div>
 
-        <div className="input-group">
+        <div className="audio-input">
+          <button
+            type="button"
+            className="mic-button"
+            onClick={toggleRecording}
+            disabled={!recognition.current}
+            title={recognition.current ? 
+              (isRecording ? "Stop recording" : "Start recording") : 
+              "Speech recognition not supported"}
+          >
+            {isRecording ? <FaMicrophoneSlash /> : <FaMicrophone />}
+          </button>
           <input
             type="text"
             className="form-control"
-            placeholder="Ask about crops, pests, or prices..."
+            placeholder="Speak or type your question..."
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSend()}
@@ -392,7 +464,6 @@ const ChatBot = () => {
             Send
           </button>
         </div>
-        
         <div className="text-center mt-2 text-muted small">
           Try: "Tomato prices near me" or "Best crops for my region"
         </div>
