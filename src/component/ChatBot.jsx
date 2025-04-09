@@ -392,7 +392,7 @@ const ChatBot = () => {
 
   useEffect(() => scrollToBottom(), [messages]);
 
-  const GEMINI_API_KEY = 'AIzaSyCnZRF-PjtViM_lN6xcM1QUZZatgaK6Jd0';
+
 
   const handleSend = async () => {
     if (!inputMessage.trim()) return;
